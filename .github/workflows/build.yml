@@ -1,0 +1,70 @@
+name: Build
+
+# Exports Headland from the private game repo (read-only deploy key) with the Apogee Engine's editor and export
+# template, both downloaded from the latest release of apogeeengine/builds. Linux for now: the game has one export
+# preset. Give a tag to publish the export as a release.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Game branch, tag or commit
+        default: main
+      engine_release:
+        description: apogeeengine/builds release tag to use (empty: the latest)
+        default: ""
+      tag:
+        description: Release tag to publish (empty: keep the artifact for 14 days)
+        default: ""
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: luheinteractive/Headland
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.GAME_DEPLOY_KEY }}
+          path: game
+
+      - name: Engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y libwayland-bin
+          TEMPLATES="$HOME/.local/share/apogee/export_templates/4.7.2.stable"
+          dir="$RUNNER_TEMP/engine"; mkdir -p "$dir" "$TEMPLATES"
+          for part in editor-x86_64 template_release-x86_64; do
+            gh release download ${{ inputs.engine_release }} --repo apogeeengine/builds \
+              --pattern "apogee-linuxbsd-$part.zip" --dir "$RUNNER_TEMP"
+            unzip -q "$RUNNER_TEMP/apogee-linuxbsd-$part.zip" -d "$dir/$part"
+          done
+          chmod +x "$dir"/editor-x86_64/apogee.linuxbsd.editor.x86_64
+          cp "$dir/template_release-x86_64/apogee.linuxbsd.template_release.x86_64" "$TEMPLATES"/linux_release.x86_64
+          cp "$dir"/template_release-x86_64/*.so* "$TEMPLATES"/
+          echo "APOGEE=$dir/editor-x86_64/apogee.linuxbsd.editor.x86_64" >> "$GITHUB_ENV"
+
+      - name: Export
+        working-directory: game
+        env:
+          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_SCRIPT_ENCRYPTION_KEY }}
+        run: |
+          "$APOGEE" --headless --path . --import || true
+          mkdir -p build/linux
+          "$APOGEE" --headless --path . --export-release Linux build/linux/Headland.x86_64
+          ls -l build/linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headland-linux-x86_64
+          path: game/build/linux
+          retention-days: 14
+
+      - name: Release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd game/build/linux && zip -qr "$GITHUB_WORKSPACE/headland-linux-x86_64.zip" .)
+          gh release create "${{ inputs.tag }}" headland-linux-x86_64.zip --repo "$GITHUB_REPOSITORY" \
+            --title "Headland ${{ inputs.tag }}" --notes "Built from luheinteractive/Headland @ ${{ inputs.ref }}."
