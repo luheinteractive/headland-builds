@@ -1,0 +1,64 @@
+name: Tests
+
+# Headland's checks, as tools/check.sh runs them: the engine pin, type analysis (luau-lsp) and all the Luau tests, with
+# the engine's editor from a release of apogeeengine/builds. Daily, and on demand.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: main
+      engine_release:
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Game branch, tag or commit
+        default: main
+      engine_release:
+        description: "apogeeengine/builds release tag to use (empty: the latest; nightly: the engine's nightly)"
+        default: ""
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: luheinteractive/Headland
+          ref: ${{ inputs.ref || 'main' }}
+          ssh-key: ${{ secrets.GAME_DEPLOY_KEY }}
+          path: game
+
+      # check.sh wants the engine checkout beside the game, with the commit ENGINE pins in its history.
+      - uses: actions/checkout@v4
+        with:
+          repository: apogeeengine/Apogee.Engine
+          ssh-key: ${{ secrets.ENGINE_DEPLOY_KEY }}
+          fetch-depth: 0
+          path: Apogee.Engine
+
+      - name: Tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y libwayland-bin
+          gh release download ${{ inputs.engine_release }} --repo apogeeengine/builds \
+            --pattern 'apogee-linuxbsd-editor-x86_64.zip' --dir "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/engine" "$RUNNER_TEMP/lsp"
+          unzip -q "$RUNNER_TEMP/apogee-linuxbsd-editor-x86_64.zip" -d "$RUNNER_TEMP/engine"
+          chmod +x "$RUNNER_TEMP/engine/apogee.linuxbsd.editor.x86_64"
+          gh release download --repo JohnnyMorganz/luau-lsp --pattern 'luau-lsp-linux-x86_64.zip' --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/luau-lsp-linux-x86_64.zip" -d "$RUNNER_TEMP/lsp"
+          chmod +x "$RUNNER_TEMP/lsp/luau-lsp"
+          echo "APOGEE=$RUNNER_TEMP/engine/apogee.linuxbsd.editor.x86_64" >> "$GITHUB_ENV"
+          echo "LUAU_LSP=$RUNNER_TEMP/lsp/luau-lsp" >> "$GITHUB_ENV"
+          echo "APOGEE_ENGINE=$GITHUB_WORKSPACE/Apogee.Engine" >> "$GITHUB_ENV"
+
+      - name: tools/check.sh
+        working-directory: game
+        run: tools/check.sh
