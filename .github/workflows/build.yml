@@ -10,10 +10,10 @@ on:
         description: Game branch, tag or commit
         default: main
       engine_release:
-        description: apogeeengine/builds release tag to use (empty: the latest)
+        description: "apogeeengine/builds release tag to use (empty: the latest)"
         default: ""
       tag:
-        description: Release tag to publish (empty: keep the artifact for 14 days)
+        description: "Release tag to publish (empty: keep the artifact for 14 days)"
         default: ""
 
 jobs:
