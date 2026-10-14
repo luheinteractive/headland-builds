@@ -1,8 +1,8 @@
 name: Build
 
 # Exports Headland from the private game repo (read-only deploy key) with the Apogee Engine's editor and export
-# template, both downloaded from the latest release of apogeeengine/builds. Linux for now: the game has one export
-# preset. Give a tag to publish the export as a release.
+# templates, both downloaded from a release of apogeeengine/builds. The three platforms export from Linux. Give a tag to
+# publish the exports as a release.
 on:
   workflow_dispatch:
     inputs:
@@ -13,12 +13,20 @@ on:
         description: "apogeeengine/builds release tag to use (empty: the latest)"
         default: ""
       tag:
-        description: "Release tag to publish (empty: keep the artifact for 14 days)"
+        description: "Release tag to publish (empty: keep the artifacts for 14 days)"
         default: ""
 
 jobs:
-  linux:
+  export:
+    name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: Linux, path: build/linux/Headland.x86_64, name: headland-linux-x86_64 }
+          - { preset: Windows, path: build/windows/Headland.exe, name: headland-windows-x86_64 }
+          - { preset: macOS, path: build/macos/Headland.zip, name: headland-macos-universal }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,17 +40,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update && sudo apt-get install -y libwayland-bin
-          TEMPLATES="$HOME/.local/share/apogee/export_templates/4.7.2.stable"
-          dir="$RUNNER_TEMP/engine"; mkdir -p "$dir" "$TEMPLATES"
-          for part in editor-x86_64 template_release-x86_64; do
-            gh release download ${{ inputs.engine_release }} --repo apogeeengine/builds \
-              --pattern "apogee-linuxbsd-$part.zip" --dir "$RUNNER_TEMP"
-            unzip -q "$RUNNER_TEMP/apogee-linuxbsd-$part.zip" -d "$dir/$part"
-          done
-          chmod +x "$dir"/editor-x86_64/apogee.linuxbsd.editor.x86_64
-          cp "$dir/template_release-x86_64/apogee.linuxbsd.template_release.x86_64" "$TEMPLATES"/linux_release.x86_64
-          cp "$dir"/template_release-x86_64/*.so* "$TEMPLATES"/
-          echo "APOGEE=$dir/editor-x86_64/apogee.linuxbsd.editor.x86_64" >> "$GITHUB_ENV"
+          dir="$RUNNER_TEMP/engine"; mkdir -p "$dir"
+          gh release download ${{ inputs.engine_release }} --repo apogeeengine/builds \
+            --pattern 'apogee-linuxbsd-editor-x86_64.zip' --pattern 'apogee-export-templates.tpz' --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/apogee-linuxbsd-editor-x86_64.zip" -d "$dir"
+          chmod +x "$dir/apogee.linuxbsd.editor.x86_64"
+          # The templates go where the editor looks: <data>/export_templates/<version>/.
+          templates="$HOME/.local/share/apogee/export_templates/4.7.2.stable"
+          mkdir -p "$templates" "$RUNNER_TEMP/tpz"
+          unzip -q "$RUNNER_TEMP/apogee-export-templates.tpz" -d "$RUNNER_TEMP/tpz"
+          cp -a "$RUNNER_TEMP"/tpz/templates/. "$templates"/
+          chmod +x "$templates"/linux_*
+          echo "APOGEE=$dir/apogee.linuxbsd.editor.x86_64" >> "$GITHUB_ENV"
 
       - name: Export
         working-directory: game
@@ -50,21 +59,36 @@ jobs:
           GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_SCRIPT_ENCRYPTION_KEY }}
         run: |
           "$APOGEE" --headless --path . --import || true
-          mkdir -p build/linux
-          "$APOGEE" --headless --path . --export-release Linux build/linux/Headland.x86_64
-          ls -l build/linux
+          mkdir -p "$(dirname '${{ matrix.path }}')"
+          "$APOGEE" --headless --path . --export-release "${{ matrix.preset }}" "${{ matrix.path }}"
+          ls -l "$(dirname '${{ matrix.path }}')"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: headland-linux-x86_64
-          path: game/build/linux
+          name: ${{ matrix.name }}
+          path: game/build/${{ matrix.preset == 'Linux' && 'linux' || matrix.preset == 'Windows' && 'windows' || 'macos' }}
           retention-days: 14
 
-      - name: Release
-        if: inputs.tag != ''
+  release:
+    name: Release ${{ inputs.tag }}
+    if: inputs.tag != ''
+    needs: export
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          (cd game/build/linux && zip -qr "$GITHUB_WORKSPACE/headland-linux-x86_64.zip" .)
-          gh release create "${{ inputs.tag }}" headland-linux-x86_64.zip --repo "$GITHUB_REPOSITORY" \
+          mkdir dist
+          for d in artifacts/*/; do
+            (cd "$d" && zip -qr "$GITHUB_WORKSPACE/dist/$(basename "$d").zip" .)
+          done
+          (cd dist && sha256sum *.zip > SHA256SUMS)
+          gh release create "${{ inputs.tag }}" dist/* --repo "$GITHUB_REPOSITORY" \
             --title "Headland ${{ inputs.tag }}" --notes "Built from luheinteractive/Headland @ ${{ inputs.ref }}."
