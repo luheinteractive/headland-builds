@@ -19,8 +19,6 @@ on:
       engine_release:
         description: "apogeeengine/builds release tag to use (empty: the latest stable release)"
         default: ""
-    schedule:
-      - cron: "0 6 * * *"
   schedule:
     - cron: "0 6 * * *"
 
