@@ -17,8 +17,10 @@ on:
         description: Game branch, tag or commit
         default: main
       engine_release:
-        description: "apogeeengine/builds release tag to use (empty: the latest; nightly: the engine's nightly)"
+        description: "apogeeengine/builds release tag to use (empty: the latest stable release)"
         default: ""
+    schedule:
+      - cron: "0 6 * * *"
   schedule:
     - cron: "0 6 * * *"
 

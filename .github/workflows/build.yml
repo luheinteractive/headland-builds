@@ -24,10 +24,10 @@ on:
         description: Game branch, tag or commit
         default: main
       engine_release:
-        description: "apogeeengine/builds release tag to use (empty: the latest; nightly: the engine's nightly)"
+        description: "apogeeengine/builds release tag to use (empty: the latest stable release)"
         default: ""
       tag:
-        description: "Release tag to publish (empty: keep the artifacts for 14 days; nightly: replace the nightly prerelease)"
+        description: Release tag to publish
         default: ""
       presets_from_main:
         description: Take export_presets.cfg from main (an old tag has no Windows or macOS preset)
@@ -115,14 +115,6 @@ jobs:
             (cd "$d" && zip -qr "$GITHUB_WORKSPACE/dist/$(basename "$d").zip" .)
           done
           (cd dist && sha256sum *.zip > SHA256SUMS)
-          flags=()
-          if [ "${{ inputs.tag }}" = nightly ]; then
-            # Replaced by each nightly build; its `commit:` line tells the next one what was built.
-            gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-            flags+=(--prerelease)
-          fi
           notes="Built from luheinteractive/Headland @ ${{ inputs.ref }}${{ inputs.presets_from_main && ', with the export presets of main' || '' }}."
-          if [ "${{ inputs.tag }}" = nightly ]; then notes="commit: ${{ inputs.ref }}
-          $notes"; fi
-          gh release create "${{ inputs.tag }}" dist/* "${flags[@]}" --repo "$GITHUB_REPOSITORY" \
+          gh release create "${{ inputs.tag }}" dist/* --repo "$GITHUB_REPOSITORY" \
             --title "Headland ${{ inputs.tag }}" --notes "$notes"
