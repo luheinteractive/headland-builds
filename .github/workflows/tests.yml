@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: luheinteractive/Headland
           ref: ${{ inputs.ref || 'main' }}
@@ -35,7 +35,7 @@ jobs:
           path: game
 
       # check.sh wants the engine checkout beside the game, with the commit ENGINE pins in its history.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: apogeeengine/Apogee.Engine
           ssh-key: ${{ secrets.ENGINE_DEPLOY_KEY }}
