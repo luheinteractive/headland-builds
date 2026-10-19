@@ -30,7 +30,7 @@ on:
         description: Release tag to publish
         default: ""
       presets_from_main:
-        description: Take export_presets.cfg from main (an old tag has no Windows or macOS preset)
+        description: Take export_presets.xml from main (an old tag has no Windows or macOS preset; a tag from before the XML formats cannot take it)
         type: boolean
         default: false
 
@@ -58,7 +58,7 @@ jobs:
         working-directory: game
         run: |
           git fetch --depth=1 origin main
-          git checkout FETCH_HEAD -- export_presets.cfg
+          git checkout FETCH_HEAD -- export_presets.xml
 
       - name: Engine
         env:
